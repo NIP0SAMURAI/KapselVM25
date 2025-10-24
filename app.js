@@ -282,14 +282,16 @@ function computeCurrentRound() {
   // Validate all matches complete
   const allComplete = r.matches.every((m) => computePlacements(m).isComplete);
   if (!allComplete) {
-    alert('Fill points for all non-BYE players in this round before computing.');
+    alert(
+      "Fill points for all non-BYE players in this round before computing."
+    );
     return;
   }
   r.computed = true;
   renderRounds();
 
   // If this is the Final Table, determine the winner and show a popup
-  const isFinalByName = r.name === 'Final Table';
+  const isFinalByName = r.name === "Final Table";
   if (isFinalByName) {
     // assume single final match
     const finalMatch = r.matches[0];
@@ -297,7 +299,7 @@ function computeCurrentRound() {
       const cm = computePlacements(finalMatch);
       if (cm.isComplete && cm.placements && cm.placements.length) {
         const winner = cm.placements[0];
-        if (winner && winner.name && winner.name !== 'BYE') {
+        if (winner && winner.name && winner.name !== "BYE") {
           showWinnerPopup(winner);
         }
       }
@@ -309,18 +311,18 @@ function buildNext() {
   if (!state.rounds.length) return;
   const prev = state.rounds[state.rounds.length - 1];
   // If we're already at the Final Table, do not build further rounds
-  if (prev.name === 'Final Table') {
-    alert('Already at the Final Table. No further rounds can be generated.');
+  if (prev.name === "Final Table") {
+    alert("Already at the Final Table. No further rounds can be generated.");
     return;
   }
 
   if (!prev.computed) {
-    alert('Compute the current round first.');
+    alert("Compute the current round first.");
     return;
   }
   const next = buildNextRound(prev, state.rounds.length - 1);
   if (!next) {
-    alert('No advancers.');
+    alert("No advancers.");
     return;
   }
   state.rounds.push(next);
@@ -332,33 +334,33 @@ function showWinnerPopup(winner) {
   // Guard
   if (!winner) return;
   // Remove existing overlay if present
-  const existing = document.querySelector('.winner-overlay');
+  const existing = document.querySelector(".winner-overlay");
   if (existing) existing.remove();
 
-  const overlay = document.createElement('div');
-  overlay.className = 'winner-overlay';
+  const overlay = document.createElement("div");
+  overlay.className = "winner-overlay";
 
-  const card = document.createElement('div');
-  card.className = 'winner-card';
+  const card = document.createElement("div");
+  card.className = "winner-card";
 
   if (winner.flagUrl) {
-    const img = document.createElement('img');
+    const img = document.createElement("img");
     img.src = winner.flagUrl;
     img.alt = `${winner.name} flag`;
     card.appendChild(img);
   }
 
-  const h = document.createElement('h2');
+  const h = document.createElement("h2");
   h.textContent = `Congratulations, ${winner.name}!`;
   card.appendChild(h);
 
-  const desc = document.createElement('p');
-  desc.textContent = 'You are the champion — well played!';
+  const desc = document.createElement("p");
+  desc.textContent = "You are the champion — well played!";
   card.appendChild(desc);
 
-  const btn = document.createElement('button');
-  btn.textContent = 'Close';
-  btn.addEventListener('click', () => overlay.remove());
+  const btn = document.createElement("button");
+  btn.textContent = "Close";
+  btn.addEventListener("click", () => overlay.remove());
   card.appendChild(btn);
 
   overlay.appendChild(card);
@@ -432,11 +434,7 @@ if (fileImport) {
     reader.onload = () => {
       try {
         const obj = JSON.parse(String(reader.result));
-        if (
-          !obj ||
-          !Array.isArray(obj.participants) ||
-          !Array.isArray(obj.rounds)
-        )
+        if (!obj || !Array.isArray(obj.participants) || !Array.isArray(obj.rounds))
           throw new Error("Bad file");
         state.participants = obj.participants;
         state.rounds = obj.rounds;
@@ -448,6 +446,89 @@ if (fileImport) {
     };
     reader.readAsText(file);
   });
+}
+
+/** Render tournament history inside the popup (replaces card content) */
+function renderHistoryInPopup(overlay, card) {
+  // Clear card
+  card.innerHTML = '';
+  const title = document.createElement('h2');
+  title.textContent = 'Tournament history';
+  card.appendChild(title);
+
+  const hist = document.createElement('div');
+  hist.className = 'history';
+
+  if (!state.rounds.length) {
+    const p = document.createElement('p');
+    p.textContent = 'No rounds yet.';
+    hist.appendChild(p);
+  } else {
+    state.rounds.forEach((round, rIdx) => {
+      const rdiv = document.createElement('div');
+      rdiv.className = 'round-entry';
+      const rh = document.createElement('strong');
+      rh.textContent = `${round.name} (${round.matches.length} match(es))`;
+      rdiv.appendChild(rh);
+
+      round.matches.forEach((m, mIdx) => {
+        const mdiv = document.createElement('div');
+        mdiv.className = 'match-entry';
+        const mh = document.createElement('div');
+        mh.textContent = `Match ${mIdx + 1}`;
+        mdiv.appendChild(mh);
+
+        // compute placements to show points
+        const cm = computePlacements(m);
+        const list = document.createElement('div');
+        cm.placements = cm.placements || m.slots.map((s) => s.participant).filter(Boolean);
+        // show participants in order of placement if available, otherwise show slots
+        const players = cm.placements.length ? cm.placements : m.slots.map((s) => s.participant).filter(Boolean);
+        players.forEach((p) => {
+          const pl = document.createElement('div');
+          pl.className = 'player-line';
+          const img = document.createElement('img');
+          img.src = p?.flagUrl || '';
+          img.alt = '';
+          pl.appendChild(img);
+          const name = document.createElement('div');
+          name.className = 'player-name';
+          name.textContent = p?.name || '';
+          pl.appendChild(name);
+          const points = m.slots.find((s) => s.participant?.id === p?.id)?.points;
+          const pts = document.createElement('div');
+          pts.className = 'player-points';
+          pts.textContent = typeof points === 'number' ? String(points) : '-';
+          pl.appendChild(pts);
+          list.appendChild(pl);
+        });
+
+        mdiv.appendChild(list);
+        rdiv.appendChild(mdiv);
+      });
+
+      hist.appendChild(rdiv);
+    });
+  }
+
+  card.appendChild(hist);
+
+  const back = document.createElement('button');
+  back.textContent = 'Back';
+  back.addEventListener('click', () => {
+    overlay.remove();
+    // Re-open winner popup by finding winner from last final round if any
+    const last = state.rounds[state.rounds.length - 1];
+    if (last && last.name === 'Final Table') {
+      const fm = last.matches[0];
+      if (fm) {
+        const cm = computePlacements(fm);
+        const winner = cm.placements?.[0];
+        if (winner) showWinnerPopup(winner);
+      }
+    }
+  });
+  card.appendChild(back);
 }
 
 // Initialize
