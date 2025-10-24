@@ -471,7 +471,8 @@ function renderRounds() {
           if (next && next.matches) {
             next.matches.forEach((nm) =>
               nm.slots.forEach((s) => {
-                if (s.participant && s.participant.id) advancerIds.add(s.participant.id);
+                if (s.participant && s.participant.id)
+                  advancerIds.add(s.participant.id);
               })
             );
           }
