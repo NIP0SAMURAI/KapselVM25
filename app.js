@@ -52,6 +52,25 @@ function distributeIntoGroups(players) {
   return groups;
 }
 
+// Find participant object by id
+function findParticipantById(id) {
+  return state.participants.find((p) => p.id === id);
+}
+
+// Return a set of participant ids assigned in the first round (useful for manual setup)
+function assignedInFirstRound() {
+  const ids = new Set();
+  if (!state.rounds.length) return ids;
+  const first = state.rounds[0];
+  if (!first) return ids;
+  first.matches.forEach((m) =>
+    m.slots.forEach((s) => {
+      if (s.participant && s.participant.id) ids.add(s.participant.id);
+    })
+  );
+  return ids;
+}
+
 function makeByes(count) {
   return Array.from({ length: count }, (_, i) => ({
     id: `bye_${i}_${uid()}`,
@@ -349,7 +368,7 @@ function buildNextRound(prev, roundIndex) {
       const pointsById = new Map();
       prev.matches.forEach((m) => {
         m.slots.forEach((s) => {
-          if (s.participant && typeof s.points === 'number') {
+          if (s.participant && typeof s.points === "number") {
             pointsById.set(s.participant.id, s.points);
           }
         });
@@ -358,7 +377,7 @@ function buildNextRound(prev, roundIndex) {
         const pa = pointsById.get(a.id) ?? 0;
         const pb = pointsById.get(b.id) ?? 0;
         if (pb !== pa) return pb - pa;
-        return (a.name || '').localeCompare(b.name || '');
+        return (a.name || "").localeCompare(b.name || "");
       });
 
       const groups = chunk4(uniqueAdv);
@@ -419,18 +438,48 @@ btnNext.disabled = !hasRounds || Boolean(lastIsFinal);
 function renderParticipants() {
   pCount.textContent = String(state.participants.length);
   pList.innerHTML = "";
+  const assigned = assignedInFirstRound();
   state.participants.forEach((p) => {
+    // Don't show participants already assigned in the manual first round
+    if (assigned.has(p.id)) return;
     const div = document.createElement("div");
     div.className = "pill";
+    div.draggable = true;
+    div.dataset.participantId = p.id;
     const img = document.createElement("img");
     img.src = p.flagUrl || "";
     img.alt = "";
     div.appendChild(img);
     const span = document.createElement("span");
-    span.textContent = p.name;
+    span.textContent = p.name + (p.section ? ` (S:${p.section})` : "");
     div.appendChild(span);
+    div.addEventListener("dragstart", (ev) => {
+      ev.dataTransfer.setData("text/plain", p.id);
+      ev.dataTransfer.effectAllowed = "move";
+    });
     pList.appendChild(div);
   });
+  // allow dropping back to the pool to unassign
+  pList.ondragover = (ev) => ev.preventDefault();
+  pList.ondrop = (ev) => {
+    ev.preventDefault();
+    const id = ev.dataTransfer.getData("text/plain");
+    if (!id) return;
+    // remove assignment from any slot in first round
+    if (state.rounds.length) {
+      const first = state.rounds[0];
+      first.matches.forEach((m) =>
+        m.slots.forEach((s) => {
+          if (s.participant?.id === id) {
+            s.participant = undefined;
+            s.points = undefined;
+          }
+        })
+      );
+      renderParticipants();
+      renderRounds();
+    }
+  };
 }
 
 function slotRow(slot, onChange) {
@@ -453,7 +502,7 @@ function slotRow(slot, onChange) {
   input.min = "0";
   input.step = "1";
   if (typeof slot.points === "number") input.value = String(slot.points);
-  input.disabled = slot.participant?.name === "BYE";
+  input.disabled = !slot.participant || slot.participant?.name === "BYE";
   input.addEventListener("input", () => onChange(Number(input.value)));
   wrap.appendChild(input);
 
@@ -493,6 +542,45 @@ function renderRounds() {
           s.points = Number.isNaN(val) ? undefined : val;
           updated();
         });
+        // If this is the manual first round, enable drag & drop on slots
+        if (rIdx === 0) {
+          wrap.dataset.matchIdx = mIdx;
+          wrap.dataset.slotIdx = sIdx;
+          wrap.classList.toggle("empty", !s.participant);
+          wrap.addEventListener("dragover", (ev) => ev.preventDefault());
+          wrap.addEventListener("drop", (ev) => {
+            ev.preventDefault();
+            const pid = ev.dataTransfer.getData("text/plain");
+            if (!pid) return;
+            const p = findParticipantById(pid);
+            if (!p) return;
+            // enforce section constraint: players with same section can't be in same match
+            const existingSections = m.slots
+              .map((sl) => sl.participant?.section)
+              .filter(Boolean);
+            if (p.section && existingSections.includes(p.section)) {
+              alert(
+                "Cannot place players from the same section in the same match for Round 1."
+              );
+              return;
+            }
+            // remove participant from any previous slot in first round
+            const first = state.rounds[0];
+            first.matches.forEach((mm) =>
+              mm.slots.forEach((sl) => {
+                if (sl.participant?.id === pid) {
+                  sl.participant = undefined;
+                  sl.points = undefined;
+                }
+              })
+            );
+            // assign to this slot
+            m.slots[sIdx].participant = p;
+            m.slots[sIdx].points = undefined;
+            renderParticipants();
+            renderRounds();
+          });
+        }
         matchEl.appendChild(wrap);
       });
 
@@ -654,8 +742,20 @@ if (btnUseSample) {
 
 btnSeed.addEventListener("click", () => {
   if (!state.participants.length) return;
-  const r1 = seedInitialRound(state.participants);
+  // Create a manual first round where the user can drag participants into groups
+  const n = state.participants.length;
+  const matchesCount = Math.ceil(n / 4);
+  const matches = Array.from({ length: matchesCount }).map(() => ({
+    id: `m_${uid()}`,
+    slots: Array.from({ length: 4 }).map(() => ({
+      participant: undefined,
+      points: undefined,
+    })),
+    isComplete: false,
+  }));
+  const r1 = { id: `r_${uid()}`, name: "Round 1", matches, computed: false };
   state.rounds = [r1];
+  renderParticipants();
   renderRounds();
 });
 

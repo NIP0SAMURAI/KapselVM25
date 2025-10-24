@@ -29,16 +29,20 @@ function participantsFromCsvRows(rows) {
   // Fallbacks: first column -> name, second column -> flag
   const nameIdx = idxName >= 0 ? idxName : 0;
   const flagIdx = idxFlag >= 0 ? idxFlag : 1;
+  const idxSection = header.findIndex((h) => /^(section|seat|seats)$/i.test(h));
 
   return data
     .map((r, i) => {
       const name = (r[nameIdx] || "").trim();
       const flag = (r[flagIdx] || "").trim();
+      const sectionRaw = idxSection >= 0 ? (r[idxSection] || "").trim() : "";
+      const section = sectionRaw === "" ? undefined : sectionRaw;
       if (!name) return null;
       return {
         id: `p_${i}_${Math.random().toString(36).slice(2)}`,
         name,
         flagUrl: flag || undefined,
+        section,
       };
     })
     .filter(Boolean);
