@@ -115,6 +115,19 @@ section {
   font-size: 13px;
   color: var(--muted);
 }
+.pill, .pill * {
+  /* Prevent text selection on participant pills to make dragging smoother */
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+}
+.pill {
+  cursor: grab;
+}
+.pill:active {
+  cursor: grabbing;
+}
 .pill img {
   width: 16px;
   height: 12px;
