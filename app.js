@@ -52,6 +52,25 @@ function distributeIntoGroups(players) {
   return groups;
 }
 
+// Find participant object by id
+function findParticipantById(id) {
+  return state.participants.find((p) => p.id === id);
+}
+
+// Return a set of participant ids assigned in the first round (useful for manual setup)
+function assignedInFirstRound() {
+  const ids = new Set();
+  if (!state.rounds.length) return ids;
+  const first = state.rounds[0];
+  if (!first) return ids;
+  first.matches.forEach((m) =>
+    m.slots.forEach((s) => {
+      if (s.participant && s.participant.id) ids.add(s.participant.id);
+    })
+  );
+  return ids;
+}
+
 function makeByes(count) {
   return Array.from({ length: count }, (_, i) => ({
     id: `bye_${i}_${uid()}`,
@@ -76,6 +95,40 @@ function seedInitialRound(players) {
     };
   });
   return { id: `r_${uid()}`, name: "Round 1", matches, computed: false };
+}
+
+/** Compute group sizes for the first (manual) round using same balancing rules
+ * so no group will have fewer than 4 real players (sizes are 4 or 5 when possible).
+ */
+function computeGroupSizes(N) {
+  if (N <= 0) return [];
+  const minMatches = Math.ceil(N / 5);
+  const maxMatches = Math.floor(N / 4) || 1;
+  let m;
+  if (minMatches <= maxMatches) m = maxMatches;
+  else m = Math.ceil(N / 4);
+  const base = Math.floor(N / m);
+  const rem = N % m;
+  const sizes = [];
+  for (let i = 0; i < m; i++) sizes.push(base + (i < rem ? 1 : 0));
+  return sizes;
+}
+
+/** Compute group sizes with fixed group count `gCount` while ensuring each group
+ * has at least 4 players if possible. If gCount is too large for N, it will be
+ * reduced so groups of at least 4 can be formed.
+ */
+function computeGroupSizesForCount(N, gCount) {
+  if (N <= 0) return [];
+  // maximum groups we can have while keeping at least 4 per group
+  const maxGroups = Math.max(1, Math.floor(N / 4));
+  let m = Math.min(gCount, maxGroups);
+  if (m <= 0) m = 1;
+  const base = Math.floor(N / m);
+  const rem = N % m;
+  const sizes = [];
+  for (let i = 0; i < m; i++) sizes.push(base + (i < rem ? 1 : 0));
+  return sizes;
 }
 
 function computePlacements(match) {
@@ -349,7 +402,7 @@ function buildNextRound(prev, roundIndex) {
       const pointsById = new Map();
       prev.matches.forEach((m) => {
         m.slots.forEach((s) => {
-          if (s.participant && typeof s.points === 'number') {
+          if (s.participant && typeof s.points === "number") {
             pointsById.set(s.participant.id, s.points);
           }
         });
@@ -358,7 +411,7 @@ function buildNextRound(prev, roundIndex) {
         const pa = pointsById.get(a.id) ?? 0;
         const pb = pointsById.get(b.id) ?? 0;
         if (pb !== pa) return pb - pa;
-        return (a.name || '').localeCompare(b.name || '');
+        return (a.name || "").localeCompare(b.name || "");
       });
 
       const groups = chunk4(uniqueAdv);
@@ -419,18 +472,48 @@ btnNext.disabled = !hasRounds || Boolean(lastIsFinal);
 function renderParticipants() {
   pCount.textContent = String(state.participants.length);
   pList.innerHTML = "";
+  const assigned = assignedInFirstRound();
   state.participants.forEach((p) => {
+    // Don't show participants already assigned in the manual first round
+    if (assigned.has(p.id)) return;
     const div = document.createElement("div");
     div.className = "pill";
+    div.draggable = true;
+    div.dataset.participantId = p.id;
     const img = document.createElement("img");
     img.src = p.flagUrl || "";
     img.alt = "";
     div.appendChild(img);
     const span = document.createElement("span");
-    span.textContent = p.name;
+    span.textContent = p.name + (p.section ? ` (S:${p.section})` : "");
     div.appendChild(span);
+    div.addEventListener("dragstart", (ev) => {
+      ev.dataTransfer.setData("text/plain", p.id);
+      ev.dataTransfer.effectAllowed = "move";
+    });
     pList.appendChild(div);
   });
+  // allow dropping back to the pool to unassign
+  pList.ondragover = (ev) => ev.preventDefault();
+  pList.ondrop = (ev) => {
+    ev.preventDefault();
+    const id = ev.dataTransfer.getData("text/plain");
+    if (!id) return;
+    // remove assignment from any slot in first round
+    if (state.rounds.length) {
+      const first = state.rounds[0];
+      first.matches.forEach((m) =>
+        m.slots.forEach((s) => {
+          if (s.participant?.id === id) {
+            s.participant = undefined;
+            s.points = undefined;
+          }
+        })
+      );
+      renderParticipants();
+      renderRounds();
+    }
+  };
 }
 
 function slotRow(slot, onChange) {
@@ -453,7 +536,7 @@ function slotRow(slot, onChange) {
   input.min = "0";
   input.step = "1";
   if (typeof slot.points === "number") input.value = String(slot.points);
-  input.disabled = slot.participant?.name === "BYE";
+  input.disabled = !slot.participant || slot.participant?.name === "BYE";
   input.addEventListener("input", () => onChange(Number(input.value)));
   wrap.appendChild(input);
 
@@ -493,6 +576,51 @@ function renderRounds() {
           s.points = Number.isNaN(val) ? undefined : val;
           updated();
         });
+        // If this is the manual first round, enable drag & drop on slots
+        if (rIdx === 0) {
+          wrap.dataset.matchIdx = mIdx;
+          wrap.dataset.slotIdx = sIdx;
+          wrap.classList.toggle("empty", !s.participant);
+          wrap.addEventListener("dragover", (ev) => ev.preventDefault());
+          wrap.addEventListener("drop", (ev) => {
+            ev.preventDefault();
+            const pid = ev.dataTransfer.getData("text/plain");
+            if (!pid) return;
+            const p = findParticipantById(pid);
+            if (!p) return;
+            // remove participant from any previous slot in first round first
+            const first = state.rounds[0];
+            first.matches.forEach((mm) =>
+              mm.slots.forEach((sl) => {
+                if (sl.participant?.id === pid) {
+                  sl.participant = undefined;
+                  sl.points = undefined;
+                }
+              })
+            );
+            // enforce section constraint: players with same section can't be in same match
+            const existingSections = m.slots
+              .map((sl) =>
+                sl.participant?.section
+                  ? String(sl.participant.section).trim()
+                  : null
+              )
+              .filter(Boolean);
+            // Allow duplicates for section '4' (lowest-seed group) if needed.
+            const pSec = p.section ? String(p.section).trim() : null;
+            if (pSec && pSec !== "4" && existingSections.includes(pSec)) {
+              alert(
+                "Cannot place players from the same section in the same match for Round 1."
+              );
+              return;
+            }
+            // assign to this slot
+            m.slots[sIdx].participant = p;
+            m.slots[sIdx].points = undefined;
+            renderParticipants();
+            renderRounds();
+          });
+        }
         matchEl.appendChild(wrap);
       });
 
@@ -654,8 +782,28 @@ if (btnUseSample) {
 
 btnSeed.addEventListener("click", () => {
   if (!state.participants.length) return;
-  const r1 = seedInitialRound(state.participants);
+  // Create a manual first round where the user can drag participants into groups
+  const n = state.participants.length;
+  // If there are players marked with section '1', use their count as desired group
+  // count (one '1' per group). Cap the group count so each group has at least 4.
+  const seatOnes = state.participants.filter(
+    (p) => String(p.section).trim() === "1"
+  ).length;
+  const sizes =
+    seatOnes > 0
+      ? computeGroupSizesForCount(n, seatOnes)
+      : computeGroupSizes(n);
+  const matches = sizes.map((sz) => ({
+    id: `m_${uid()}`,
+    slots: Array.from({ length: sz }).map(() => ({
+      participant: undefined,
+      points: undefined,
+    })),
+    isComplete: false,
+  }));
+  const r1 = { id: `r_${uid()}`, name: "Round 1", matches, computed: false };
   state.rounds = [r1];
+  renderParticipants();
   renderRounds();
 });
 
