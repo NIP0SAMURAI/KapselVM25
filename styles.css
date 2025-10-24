@@ -30,7 +30,8 @@ body {
   top: 0;
   left: 0;
   right: 0;
-  z-index: 100;
+  /* Ensure the header is in front of all other UI elements */
+  z-index: 2000;
   background: rgba(15, 17, 21, 0.9);
   border-bottom: 1px solid var(--border);
   backdrop-filter: blur(8px);
@@ -77,6 +78,24 @@ section {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+/* Make the participants column sticky so it's easy to drag from while
+   scrolling through rounds. Keep it visually in front of content. */
+.participants {
+  position: sticky;
+  top: 72px; /* stays below the fixed header */
+  z-index: 250;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px;
+  box-shadow: 0 8px 24px rgba(2,6,23,0.4);
+}
+.pillwrap {
+  max-height: calc(100vh - 140px);
+  overflow: auto;
+  padding-right: 8px; /* space for scrollbar */
 }
 .pill {
   display: inline-flex;
