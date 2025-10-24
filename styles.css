@@ -74,6 +74,13 @@ section {
   margin-bottom: 28px;
 }
 
+/* Nudge the rounds section down so it sits visually below the participants panel/header */
+.rounds {
+  /* Add a small internal offset to guard against margin-collapse or
+     stacking contexts from sticky elements so the rounds visually move down. */
+  padding-top: 8px;
+}
+
 .pillwrap {
   display: flex;
   gap: 8px;
@@ -90,7 +97,7 @@ section {
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 12px;
-  box-shadow: 0 8px 24px rgba(2,6,23,0.4);
+  box-shadow: 0 8px 24px rgba(2, 6, 23, 0.4);
 }
 .pillwrap {
   max-height: calc(100vh - 140px);
