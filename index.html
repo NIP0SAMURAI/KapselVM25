@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Tournament Tree – Vanilla JS</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <h1>🏆 Tournament Tree</h1>
+      <div class="controls">
+        <input
+          id="csvUrl"
+          type="url"
+          placeholder="Using default published Google Sheet"
+          readonly
+          value="https://docs.google.com/spreadsheets/d/e/2PACX-1vSac9m1rxVUX63yWLU6cOOBVGxFRhqiNctV8enmlSSB0QsrGSAh2OVCbF4kOrVwwMsf8mksijRvda6l/pub?output=csv"
+        />
+        <button id="btnLoad">Load (default sheet)</button>
+        <button id="btnUseSample" title="Load local sample.csv">Sample</button>
+        <button id="btnSeed" disabled>Generate Round 1</button>
+        <button id="btnCompute" disabled>Compute Round</button>
+        <button id="btnNext" disabled>Build Next Round</button>
+        <button id="btnReset">Reset</button>
+      </div>
+      <div class="subcontrols">
+        <button id="btnExport">Export State</button>
+        <label class="import">
+          Import State
+          <input id="fileImport" type="file" accept="application/json" />
+        </label>
+      </div>
+    </header>
+
+    <main>
+      <section class="participants">
+        <h2>Participants (<span id="pCount">0</span>)</h2>
+        <div id="pList" class="pillwrap"></div>
+      </section>
+
+      <section class="rounds">
+        <h2>Rounds</h2>
+        <div id="roundsContainer" class="rounds-grid"></div>
+      </section>
+    </main>
+
+    <template id="tplMatch">
+      <div class="match">
+        <div class="slot">
+          <img class="flag" />
+          <span class="name"></span>
+          <input type="number" class="points" min="0" step="1" />
+        </div>
+      </div>
+    </template>
+
+    <script src="sheets.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
