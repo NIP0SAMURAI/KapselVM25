@@ -120,10 +120,21 @@ function computeGroupSizes(N) {
  */
 function computeGroupSizesForCount(N, gCount) {
   if (N <= 0) return [];
-  // maximum groups we can have while keeping at least 4 per group
-  const maxGroups = Math.max(1, Math.floor(N / 4));
-  let m = Math.min(gCount, maxGroups);
-  if (m <= 0) m = 1;
+  // By default, compute groups while ensuring at least 4 per group when possible.
+  // However some users may prefer a forced group count (for example 6 groups)
+  // even if that yields groups smaller than 4. The original caller may cap the
+  // groups; here we will compute sizes for the requested count but cap it to
+  // at most N (can't have more groups than players).
+  const mRequested = Math.max(1, Math.min(gCount, N));
+  // If mRequested would result in groups smaller than 3 and the caller did not
+  // explicitly request such a small group count, the previous behavior kept
+  // groups >=4 by capping with Math.floor(N/4). Keep that behavior if the
+  // requested count is <= Math.floor(N/4); otherwise honor the request.
+  const maxGroupsKeeping4 = Math.max(1, Math.floor(N / 4));
+  const m =
+    mRequested > maxGroupsKeeping4
+      ? mRequested
+      : Math.min(mRequested, maxGroupsKeeping4);
   const base = Math.floor(N / m);
   const rem = N % m;
   const sizes = [];
@@ -620,6 +631,24 @@ function renderRounds() {
             renderParticipants();
             renderRounds();
           });
+          // Allow dragging a participant out of a slot to reassign/unassign.
+          // When a slot has a participant, make the slot itself draggable so the
+          // user can drag the name back to the participants pool or another slot.
+          if (s.participant) {
+            wrap.draggable = true;
+            wrap.addEventListener("dragstart", (ev) => {
+              try {
+                ev.dataTransfer.setData("text/plain", s.participant.id);
+                ev.dataTransfer.effectAllowed = "move";
+              } catch (e) {
+                // ignore
+              }
+            });
+            // When drag ends without a drop, leave assignment as-is. If dropped
+            // on the pool, the pool's drop handler will clear it.
+          } else {
+            wrap.draggable = false;
+          }
         }
         matchEl.appendChild(wrap);
       });
@@ -789,10 +818,21 @@ btnSeed.addEventListener("click", () => {
   const seatOnes = state.participants.filter(
     (p) => String(p.section).trim() === "1"
   ).length;
-  const sizes =
-    seatOnes > 0
-      ? computeGroupSizesForCount(n, seatOnes)
-      : computeGroupSizes(n);
+  // Default initial group count when no explicit seat-1 markers exist.
+  const DEFAULT_INITIAL_GROUPS = 6;
+  // Use seatOnes only when it represents at least DEFAULT_INITIAL_GROUPS groups;
+  // otherwise prefer the DEFAULT_INITIAL_GROUPS baseline so small seat-1 counts
+  // don't force fewer groups than expected.
+  const useSeatOnes = seatOnes > 0 && seatOnes >= DEFAULT_INITIAL_GROUPS;
+  const sizes = useSeatOnes
+    ? computeGroupSizesForCount(n, seatOnes)
+    : computeGroupSizesForCount(n, DEFAULT_INITIAL_GROUPS);
+  // Debug: log group computation for troubleshooting when users see unexpected
+  // number of groups (helps confirm sizes in the browser console).
+  try {
+    console.log("[btnSeed] participants=", n, "seatOnes=", seatOnes, "useSeatOnes=", useSeatOnes, "sizes=", sizes, "groups=", sizes.length);
+    console.log("[btnSeed] participant sections=", state.participants.map(p => ({name: p.name, section: p.section})).slice(0,50));
+  } catch (e) {}
   const matches = sizes.map((sz) => ({
     id: `m_${uid()}`,
     slots: Array.from({ length: sz }).map(() => ({
