@@ -461,17 +461,29 @@ function renderRounds() {
         matchEl.appendChild(wrap);
       });
 
-      // if complete, highlight top 2
-      const cm = computePlacements(m);
-      if (cm.isComplete && cm.placements) {
-        // map placements to slot indices to add highlight
-        const sorted = [...m.slots].sort(
-          (a, b) => (b.points ?? -Infinity) - (a.points ?? -Infinity)
-        );
-        const top2 = sorted.slice(0, 2).map((x) => x.participant?.id);
+      // Highlight players who actually advance to the next round (if known)
+      // We compute the candidate next round and mark any participant that
+      // appears in its matches as an advancer.
+      let advancerIds = new Set();
+      if (round.computed) {
+        try {
+          const next = buildNextRound(round, rIdx);
+          if (next && next.matches) {
+            next.matches.forEach((nm) =>
+              nm.slots.forEach((s) => {
+                if (s.participant && s.participant.id) advancerIds.add(s.participant.id);
+              })
+            );
+          }
+        } catch (e) {
+          // buildNextRound can return null or throw if placements missing; ignore
+        }
+      }
+
+      if (advancerIds.size) {
         Array.from(matchEl.querySelectorAll(".slot")).forEach((slotDiv, i) => {
           const id = m.slots[i].participant?.id;
-          if (top2.includes(id)) slotDiv.classList.add("highlight");
+          if (id && advancerIds.has(id)) slotDiv.classList.add("highlight");
         });
       }
 
