@@ -84,7 +84,7 @@ section {
    scrolling through rounds. Keep it visually in front of content. */
 .participants {
   position: sticky;
-  top: 72px; /* stays below the fixed header */
+  top: 80px; /* stays below the fixed header; moved down 8px */
   z-index: 250;
   background: var(--panel);
   border: 1px solid var(--border);
