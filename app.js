@@ -97,6 +97,23 @@ function seedInitialRound(players) {
   return { id: `r_${uid()}`, name: "Round 1", matches, computed: false };
 }
 
+/** Compute group sizes for the first (manual) round using same balancing rules
+ * so no group will have fewer than 4 real players (sizes are 4 or 5 when possible).
+ */
+function computeGroupSizes(N) {
+  if (N <= 0) return [];
+  const minMatches = Math.ceil(N / 5);
+  const maxMatches = Math.floor(N / 4) || 1;
+  let m;
+  if (minMatches <= maxMatches) m = maxMatches;
+  else m = Math.ceil(N / 4);
+  const base = Math.floor(N / m);
+  const rem = N % m;
+  const sizes = [];
+  for (let i = 0; i < m; i++) sizes.push(base + (i < rem ? 1 : 0));
+  return sizes;
+}
+
 function computePlacements(match) {
   // Incomplete if any real participant lacks points
   const needs = match.slots.some(
@@ -554,17 +571,7 @@ function renderRounds() {
             if (!pid) return;
             const p = findParticipantById(pid);
             if (!p) return;
-            // enforce section constraint: players with same section can't be in same match
-            const existingSections = m.slots
-              .map((sl) => sl.participant?.section)
-              .filter(Boolean);
-            if (p.section && existingSections.includes(p.section)) {
-              alert(
-                "Cannot place players from the same section in the same match for Round 1."
-              );
-              return;
-            }
-            // remove participant from any previous slot in first round
+            // remove participant from any previous slot in first round first
             const first = state.rounds[0];
             first.matches.forEach((mm) =>
               mm.slots.forEach((sl) => {
@@ -574,6 +581,23 @@ function renderRounds() {
                 }
               })
             );
+            // enforce section constraint: players with same section can't be in same match
+            const existingSections = m.slots
+              .map((sl) =>
+                sl.participant?.section
+                  ? String(sl.participant.section).trim()
+                  : null
+              )
+              .filter(Boolean);
+            if (
+              p.section &&
+              existingSections.includes(String(p.section).trim())
+            ) {
+              alert(
+                "Cannot place players from the same section in the same match for Round 1."
+              );
+              return;
+            }
             // assign to this slot
             m.slots[sIdx].participant = p;
             m.slots[sIdx].points = undefined;
@@ -744,10 +768,10 @@ btnSeed.addEventListener("click", () => {
   if (!state.participants.length) return;
   // Create a manual first round where the user can drag participants into groups
   const n = state.participants.length;
-  const matchesCount = Math.ceil(n / 4);
-  const matches = Array.from({ length: matchesCount }).map(() => ({
+  const sizes = computeGroupSizes(n);
+  const matches = sizes.map((sz) => ({
     id: `m_${uid()}`,
-    slots: Array.from({ length: 4 }).map(() => ({
+    slots: Array.from({ length: sz }).map(() => ({
       participant: undefined,
       points: undefined,
     })),

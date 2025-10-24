@@ -35,8 +35,8 @@ function participantsFromCsvRows(rows) {
     .map((r, i) => {
       const name = (r[nameIdx] || "").trim();
       const flag = (r[flagIdx] || "").trim();
-      const sectionRaw = idxSection >= 0 ? (r[idxSection] || "").trim() : "";
-      const section = sectionRaw === "" ? undefined : sectionRaw;
+      const sectionRaw = idxSection >= 0 ? r[idxSection] || "" : "";
+      const section = sectionRaw === "" ? undefined : String(sectionRaw).trim();
       if (!name) return null;
       return {
         id: `p_${i}_${Math.random().toString(36).slice(2)}`,
