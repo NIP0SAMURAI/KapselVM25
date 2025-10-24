@@ -161,10 +161,13 @@ const btnLoad = el("#btnLoad");
 const btnUseSample = el("#btnUseSample");
 const btnSeed = el("#btnSeed");
 const btnCompute = el("#btnCompute");
-const btnNext = el("#btnNext");
-const btnReset = el("#btnReset");
-const btnExport = el("#btnExport");
-const fileImport = el("#fileImport");
+btnSeed.disabled = state.participants.length === 0 || state.rounds.length > 0;
+const hasRounds = state.rounds.length > 0;
+btnCompute.disabled = !hasRounds;
+// Disable "Next" when there are no rounds or the last round is the Final Table
+const lastRound = hasRounds ? state.rounds[state.rounds.length - 1] : null;
+const lastIsFinal = lastRound && lastRound.name === "Final Table";
+btnNext.disabled = !hasRounds || Boolean(lastIsFinal);
 
 function renderParticipants() {
   pCount.textContent = String(state.participants.length);
@@ -291,6 +294,12 @@ function computeCurrentRound() {
 function buildNext() {
   if (!state.rounds.length) return;
   const prev = state.rounds[state.rounds.length - 1];
+  // If we're already at the Final Table, do not build further rounds
+  if (prev.name === "Final Table") {
+    alert("Already at the Final Table. No further rounds can be generated.");
+    return;
+  }
+
   if (!prev.computed) {
     alert("Compute the current round first.");
     return;
@@ -392,3 +401,18 @@ if (fileImport) {
 // Initialize
 renderParticipants();
 renderRounds();
+
+// Ensure main content is pushed below the fixed header so it doesn't hide under it.
+function adjustMainPadding() {
+  const topbar = document.querySelector('.topbar');
+  const mainEl = document.querySelector('main');
+  if (!topbar || !mainEl) return;
+  const cs = getComputedStyle(mainEl);
+  const currentTop = parseFloat(cs.paddingTop) || 0;
+  // Set padding-top to existing top padding plus header height
+  mainEl.style.paddingTop = `${topbar.offsetHeight + currentTop}px`;
+}
+
+window.addEventListener('resize', () => adjustMainPadding());
+// run after a short delay to allow fonts and layout to stabilise
+setTimeout(adjustMainPadding, 50);

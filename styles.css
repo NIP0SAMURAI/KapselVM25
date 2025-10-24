@@ -26,13 +26,17 @@ body {
 }
 
 .topbar {
-  position: sticky;
+  position: fixed;
   top: 0;
-  z-index: 10;
+  left: 0;
+  right: 0;
+  z-index: 100;
   background: rgba(15, 17, 21, 0.9);
   border-bottom: 1px solid var(--border);
   backdrop-filter: blur(8px);
   padding: 14px clamp(12px, 2vw, 24px);
+  box-shadow: 0 4px 18px rgba(2, 6, 23, 0.45);
+  will-change: transform;
 }
 .topbar h1 {
   margin: 0 0 8px;
