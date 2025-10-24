@@ -282,35 +282,87 @@ function computeCurrentRound() {
   // Validate all matches complete
   const allComplete = r.matches.every((m) => computePlacements(m).isComplete);
   if (!allComplete) {
-    alert(
-      "Fill points for all non-BYE players in this round before computing."
-    );
+    alert('Fill points for all non-BYE players in this round before computing.');
     return;
   }
   r.computed = true;
   renderRounds();
+
+  // If this is the Final Table, determine the winner and show a popup
+  const isFinalByName = r.name === 'Final Table';
+  if (isFinalByName) {
+    // assume single final match
+    const finalMatch = r.matches[0];
+    if (finalMatch) {
+      const cm = computePlacements(finalMatch);
+      if (cm.isComplete && cm.placements && cm.placements.length) {
+        const winner = cm.placements[0];
+        if (winner && winner.name && winner.name !== 'BYE') {
+          showWinnerPopup(winner);
+        }
+      }
+    }
+  }
 }
 
 function buildNext() {
   if (!state.rounds.length) return;
   const prev = state.rounds[state.rounds.length - 1];
   // If we're already at the Final Table, do not build further rounds
-  if (prev.name === "Final Table") {
-    alert("Already at the Final Table. No further rounds can be generated.");
+  if (prev.name === 'Final Table') {
+    alert('Already at the Final Table. No further rounds can be generated.');
     return;
   }
 
   if (!prev.computed) {
-    alert("Compute the current round first.");
+    alert('Compute the current round first.');
     return;
   }
   const next = buildNextRound(prev, state.rounds.length - 1);
   if (!next) {
-    alert("No advancers.");
+    alert('No advancers.');
     return;
   }
   state.rounds.push(next);
   renderRounds();
+}
+
+/** Show a simple modal congratulating the winner */
+function showWinnerPopup(winner) {
+  // Guard
+  if (!winner) return;
+  // Remove existing overlay if present
+  const existing = document.querySelector('.winner-overlay');
+  if (existing) existing.remove();
+
+  const overlay = document.createElement('div');
+  overlay.className = 'winner-overlay';
+
+  const card = document.createElement('div');
+  card.className = 'winner-card';
+
+  if (winner.flagUrl) {
+    const img = document.createElement('img');
+    img.src = winner.flagUrl;
+    img.alt = `${winner.name} flag`;
+    card.appendChild(img);
+  }
+
+  const h = document.createElement('h2');
+  h.textContent = `Congratulations, ${winner.name}!`;
+  card.appendChild(h);
+
+  const desc = document.createElement('p');
+  desc.textContent = 'You are the champion — well played!';
+  card.appendChild(desc);
+
+  const btn = document.createElement('button');
+  btn.textContent = 'Close';
+  btn.addEventListener('click', () => overlay.remove());
+  card.appendChild(btn);
+
+  overlay.appendChild(card);
+  document.body.appendChild(overlay);
 }
 
 // ====== Wiring ======
@@ -404,15 +456,19 @@ renderRounds();
 
 // Ensure main content is pushed below the fixed header so it doesn't hide under it.
 function adjustMainPadding() {
-  const topbar = document.querySelector('.topbar');
-  const mainEl = document.querySelector('main');
+  const topbar = document.querySelector(".topbar");
+  const mainEl = document.querySelector("main");
   if (!topbar || !mainEl) return;
   const cs = getComputedStyle(mainEl);
   const currentTop = parseFloat(cs.paddingTop) || 0;
   // Set padding-top to existing top padding plus header height
-  mainEl.style.paddingTop = `${topbar.offsetHeight + currentTop}px`;
+  // Add extra 24px so content is comfortably below the fixed header
+  const EXTRA_OFFSET = 24; // px
+  mainEl.style.paddingTop = `${
+    topbar.offsetHeight + currentTop + EXTRA_OFFSET
+  }px`;
 }
 
-window.addEventListener('resize', () => adjustMainPadding());
+window.addEventListener("resize", () => adjustMainPadding());
 // run after a short delay to allow fonts and layout to stabilise
 setTimeout(adjustMainPadding, 50);
