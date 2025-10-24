@@ -125,38 +125,217 @@ function nextRoundFrom(current) {
 function buildNextRound(prev, roundIndex) {
   const { advancers, thirds } = nextRoundFrom(prev);
   if (advancers.length === 0) return null;
+  // Debug: report advancers and previous round
+  try {
+    console.log(
+      "[buildNextRound] prev.name=",
+      prev.name,
+      "advancers=",
+      advancers.length,
+      advancers.map((p) => p?.name)
+    );
+  } catch (err) {
+    console.log("[buildNextRound] debug log failed", err);
+  }
 
-  // Special case: Semifinal format (3 matches of 3 players)
-  // If previous round has exactly 3 matches and each match has 3 real players,
-  // advance the 1st from each match plus the best 2nd (by points) -> total 4.
-  const isSemifinalFormat = prev.matches.length === 3 && prev.matches.every((m) => {
-    const realPlayers = m.slots.filter((s) => s.participant && s.participant.name !== 'BYE');
-    return realPlayers.length === 3;
-  });
+  // If previous round is already the Semifinal, build the Final Table from it:
+  // take the 3 winners plus the best second (by points) -> final 4.
+  if (prev.name === "Semifinal") {
+    const cms = prev.matches.map((m) => computePlacements(m));
+    try {
+      console.log(
+        "[buildNextRound] from Semifinal placements=",
+        cms.map((c) => ({
+          isComplete: c.isComplete,
+          placements: (c.placements || []).map((p) => p?.name),
+        }))
+      );
+    } catch (e) {
+      console.log("[buildNextRound] debug placements failed", e);
+    }
+    if (
+      !cms.every(
+        (cm) => cm.isComplete && cm.placements && cm.placements.length >= 2
+      )
+    ) {
+      return null; // need placements
+    }
+    const winners = cms.map((cm) => cm.placements[0]).filter(Boolean);
+    const seconds = cms
+      .map((cm, idx) => {
+        const second = cm.placements[1];
+        const pts =
+          prev.matches[idx].slots.find((s) => s.participant?.id === second?.id)
+            ?.points ?? 0;
+        return { p: second, points: pts };
+      })
+      .filter((x) => x.p)
+      .sort((a, b) => b.points - a.points || a.p.name.localeCompare(b.p.name));
+
+    const bestSecond = seconds[0]?.p;
+    const adv = [...winners];
+    if (bestSecond) adv.push(bestSecond);
+    const uniqueAdv = Array.from(new Map(adv.map((p) => [p.id, p])).values());
+    if (uniqueAdv.length !== 4) return null;
+    const groups = chunk4(uniqueAdv);
+    const matches = groups.map((g) => ({
+      id: `m_${uid()}`,
+      slots: g.map((p) => ({ participant: p })),
+      isComplete: false,
+    }));
+    return { id: `r_${uid()}`, name: "Final Table", matches, computed: false };
+  }
+
+  // Attempt to form a Semifinal of 9 players (3 matches × 3 players).
+  // Build a candidate pool: winners first, then seconds (by points), then
+  // third-placed players (by points). If we can select 9 unique players,
+  // create the Semifinal and skip the minimum-4-player rule for this round.
+  if (prev.name !== "Semifinal") {
+    const cms = prev.matches.map((m) => computePlacements(m));
+    // need placements for all matches to reason about winners/seconds/thirds
+    if (cms.every((cm) => cm.isComplete && cm.placements)) {
+      const winners = cms
+        .map((cm) => cm.placements[0])
+        .filter((p) => p && p.name !== "BYE");
+
+      const seconds = cms
+        .map((cm, idx) => {
+          const second = cm.placements[1];
+          if (!second || second.name === "BYE") return null;
+          const pts =
+            prev.matches[idx].slots.find((s) => s.participant?.id === second.id)
+              ?.points ?? 0;
+          return { p: second, points: pts };
+        })
+        .filter(Boolean)
+        .sort(
+          (a, b) => b.points - a.points || a.p.name.localeCompare(b.p.name)
+        );
+
+      // thirds param already contains third-placed players with points
+      const thirdsSorted = [...thirds].sort(
+        (a, b) => b.points - a.points || a.p.name.localeCompare(b.p.name)
+      );
+
+      // build candidate list: winners (unique), then seconds, then thirds
+      const seen = new Set();
+      const pool = [];
+      winners.forEach((w) => {
+        if (!seen.has(w.id)) {
+          seen.add(w.id);
+          pool.push(w);
+        }
+      });
+      seconds.forEach((s) => {
+        if (!seen.has(s.p.id)) {
+          seen.add(s.p.id);
+          pool.push(s.p);
+        }
+      });
+      thirdsSorted.forEach((t) => {
+        if (!seen.has(t.p.id)) {
+          seen.add(t.p.id);
+          pool.push(t.p);
+        }
+      });
+
+      // Debug: log candidate pool before deciding on Semifinal
+      try {
+        console.log(
+          "[buildNextRound] candidate pool length=",
+          pool.length,
+          "pool=",
+          pool.map((p) => p?.name)
+        );
+      } catch (e) {
+        console.log("[buildNextRound] debug pool log failed", e);
+      }
+
+      // Only create a Semifinal when we can select exactly 9 players.
+      // Using >= allowed premature creation; require === 9 to match rule.
+      if (pool.length === 9) {
+        const selected = pool.slice(0, 9);
+        const groups = [];
+        for (let i = 0; i < 3; i++)
+          groups.push(selected.slice(i * 3, i * 3 + 3));
+        const matches = groups.map((g) => ({
+          id: `m_${uid()}`,
+          slots: g.map((p) => ({ participant: p })),
+          isComplete: false,
+        }));
+        return {
+          id: `r_${uid()}`,
+          name: "Semifinal",
+          matches,
+          computed: false,
+        };
+      }
+    }
+  }
+
+  // Special case: Semifinal-like format (three matches where each has at
+  // least two real players). This covers BYE-padded matches (e.g. 3 real + 1 BYE)
+  // We only create the Final Table here when taking the 3 winners + best
+  // second yields exactly 4 unique advancers. Otherwise fall back to normal
+  // advancer distribution.
+  const isSemifinalFormat =
+    prev.matches.length === 3 &&
+    prev.matches.every((m) => {
+      const realPlayers = m.slots.filter(
+        (s) => s.participant && s.participant.name !== "BYE"
+      );
+      // require at least two real players so a 'second' position exists
+      return realPlayers.length >= 2;
+    });
 
   if (isSemifinalFormat) {
     // Ensure placements are computed for all matches
     const cms = prev.matches.map((m) => computePlacements(m));
-    if (!cms.every((cm) => cm.isComplete && cm.placements && cm.placements.length >= 2)) return null;
+    if (
+      !cms.every(
+        (cm) => cm.isComplete && cm.placements && cm.placements.length >= 2
+      )
+    ) {
+      // can't proceed if placements not available
+      return null;
+    }
 
     const winners = cms.map((cm) => cm.placements[0]).filter(Boolean);
-    const seconds = cms.map((cm, idx) => {
-      const second = cm.placements[1];
-      const pts = prev.matches[idx].slots.find((s) => s.participant?.id === second?.id)?.points ?? 0;
-      return { p: second, points: pts };
-    }).filter((x) => x.p);
+    const seconds = cms
+      .map((cm, idx) => {
+        const second = cm.placements[1];
+        const pts =
+          prev.matches[idx].slots.find((s) => s.participant?.id === second?.id)
+            ?.points ?? 0;
+        return { p: second, points: pts };
+      })
+      .filter((x) => x.p);
 
     // choose best second (points desc, then name)
-    seconds.sort((a, b) => b.points - a.points || a.p.name.localeCompare(b.p.name));
+    seconds.sort(
+      (a, b) => b.points - a.points || a.p.name.localeCompare(b.p.name)
+    );
     const bestSecond = seconds[0]?.p;
-    const adv = [...winners];
-    if (bestSecond) adv.push(bestSecond);
+    const advCandidates = [...winners];
+    if (bestSecond) advCandidates.push(bestSecond);
 
-    const groups = chunk4(adv);
-    const isFinal = adv.length === 4;
-    const roundName = isFinal ? 'Final Table' : `Round ${roundIndex + 2}`;
-    const matches = groups.map((g) => ({ id: `m_${uid()}`, slots: g.map((p) => ({ participant: p })), isComplete: false }));
-    return { id: `r_${uid()}`, name: roundName, matches, computed: false };
+    // de-duplicate by id and ensure we have exactly 4 advancers before treating
+    // this as the Final Table special case
+    const uniqueAdv = Array.from(
+      new Map(advCandidates.map((p) => [p.id, p])).values()
+    );
+
+    if (uniqueAdv.length === 4) {
+      const groups = chunk4(uniqueAdv);
+      const roundName = "Final Table";
+      const matches = groups.map((g) => ({
+        id: `m_${uid()}`,
+        slots: g.map((p) => ({ participant: p })),
+        isComplete: false,
+      }));
+      return { id: `r_${uid()}`, name: roundName, matches, computed: false };
+    }
+    // otherwise fall through to the normal advancer distribution logic
   }
 
   // Distribute advancers preferring 4/5 sized matches when possible
