@@ -177,6 +177,25 @@ function buildNextRound(prev, roundIndex) {
     if (bestSecond) adv.push(bestSecond);
     const uniqueAdv = Array.from(new Map(adv.map((p) => [p.id, p])).values());
     if (uniqueAdv.length !== 4) return null;
+
+    // Order finalists by the points they scored in the semifinal (desc).
+    // Build a lookup of points from the semifinal prev.matches.
+    const pointsById = new Map();
+    prev.matches.forEach((m) => {
+      m.slots.forEach((s) => {
+        if (s.participant && typeof s.points === "number") {
+          pointsById.set(s.participant.id, s.points);
+        }
+      });
+    });
+
+    uniqueAdv.sort((a, b) => {
+      const pa = pointsById.get(a.id) ?? 0;
+      const pb = pointsById.get(b.id) ?? 0;
+      if (pb !== pa) return pb - pa;
+      return (a.name || "").localeCompare(b.name || "");
+    });
+
     const groups = chunk4(uniqueAdv);
     const matches = groups.map((g) => ({
       id: `m_${uid()}`,
@@ -326,6 +345,22 @@ function buildNextRound(prev, roundIndex) {
     );
 
     if (uniqueAdv.length === 4) {
+      // Order finalists by the points they scored in the previous round (semifinal-like)
+      const pointsById = new Map();
+      prev.matches.forEach((m) => {
+        m.slots.forEach((s) => {
+          if (s.participant && typeof s.points === 'number') {
+            pointsById.set(s.participant.id, s.points);
+          }
+        });
+      });
+      uniqueAdv.sort((a, b) => {
+        const pa = pointsById.get(a.id) ?? 0;
+        const pb = pointsById.get(b.id) ?? 0;
+        if (pb !== pa) return pb - pa;
+        return (a.name || '').localeCompare(b.name || '');
+      });
+
       const groups = chunk4(uniqueAdv);
       const roundName = "Final Table";
       const matches = groups.map((g) => ({
