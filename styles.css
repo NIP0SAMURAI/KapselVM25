@@ -65,7 +65,9 @@ button:disabled {
 }
 
 main {
-  padding: 20px clamp(12px, 2vw, 24px);
+  /* Ensure main content clears the fixed header: increase top/bottom padding
+     by 24px so content isn't hidden under the fixed header. */
+  padding: 44px clamp(12px, 2vw, 24px);
 }
 section {
   margin-bottom: 28px;
