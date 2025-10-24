@@ -114,6 +114,23 @@ function computeGroupSizes(N) {
   return sizes;
 }
 
+/** Compute group sizes with fixed group count `gCount` while ensuring each group
+ * has at least 4 players if possible. If gCount is too large for N, it will be
+ * reduced so groups of at least 4 can be formed.
+ */
+function computeGroupSizesForCount(N, gCount) {
+  if (N <= 0) return [];
+  // maximum groups we can have while keeping at least 4 per group
+  const maxGroups = Math.max(1, Math.floor(N / 4));
+  let m = Math.min(gCount, maxGroups);
+  if (m <= 0) m = 1;
+  const base = Math.floor(N / m);
+  const rem = N % m;
+  const sizes = [];
+  for (let i = 0; i < m; i++) sizes.push(base + (i < rem ? 1 : 0));
+  return sizes;
+}
+
 function computePlacements(match) {
   // Incomplete if any real participant lacks points
   const needs = match.slots.some(
@@ -589,10 +606,9 @@ function renderRounds() {
                   : null
               )
               .filter(Boolean);
-            if (
-              p.section &&
-              existingSections.includes(String(p.section).trim())
-            ) {
+            // Allow duplicates for section '4' (lowest-seed group) if needed.
+            const pSec = p.section ? String(p.section).trim() : null;
+            if (pSec && pSec !== "4" && existingSections.includes(pSec)) {
               alert(
                 "Cannot place players from the same section in the same match for Round 1."
               );
@@ -768,7 +784,15 @@ btnSeed.addEventListener("click", () => {
   if (!state.participants.length) return;
   // Create a manual first round where the user can drag participants into groups
   const n = state.participants.length;
-  const sizes = computeGroupSizes(n);
+  // If there are players marked with section '1', use their count as desired group
+  // count (one '1' per group). Cap the group count so each group has at least 4.
+  const seatOnes = state.participants.filter(
+    (p) => String(p.section).trim() === "1"
+  ).length;
+  const sizes =
+    seatOnes > 0
+      ? computeGroupSizesForCount(n, seatOnes)
+      : computeGroupSizes(n);
   const matches = sizes.map((sz) => ({
     id: `m_${uid()}`,
     slots: Array.from({ length: sz }).map(() => ({
