@@ -830,8 +830,24 @@ btnSeed.addEventListener("click", () => {
   // Debug: log group computation for troubleshooting when users see unexpected
   // number of groups (helps confirm sizes in the browser console).
   try {
-    console.log("[btnSeed] participants=", n, "seatOnes=", seatOnes, "useSeatOnes=", useSeatOnes, "sizes=", sizes, "groups=", sizes.length);
-    console.log("[btnSeed] participant sections=", state.participants.map(p => ({name: p.name, section: p.section})).slice(0,50));
+    console.log(
+      "[btnSeed] participants=",
+      n,
+      "seatOnes=",
+      seatOnes,
+      "useSeatOnes=",
+      useSeatOnes,
+      "sizes=",
+      sizes,
+      "groups=",
+      sizes.length
+    );
+    console.log(
+      "[btnSeed] participant sections=",
+      state.participants
+        .map((p) => ({ name: p.name, section: p.section }))
+        .slice(0, 50)
+    );
   } catch (e) {}
   const matches = sizes.map((sz) => ({
     id: `m_${uid()}`,
