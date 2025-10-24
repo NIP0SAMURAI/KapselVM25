@@ -20,6 +20,38 @@ function chunk4(arr) {
   return out;
 }
 
+/**
+ * Distribute players into groups where each group has at least 4 players.
+ * When possible, groups will be sized 4 or 5 so the real participants per
+ * match are balanced and no match has fewer than 4 real players.
+ */
+function distributeIntoGroups(players) {
+  const N = players.length;
+  if (N === 0) return [];
+
+  const minMatches = Math.ceil(N / 5);
+  const maxMatches = Math.floor(N / 4);
+
+  let m;
+  if (minMatches <= maxMatches) {
+    m = maxMatches; // prefer more matches (closer to 4 players each)
+  } else {
+    m = Math.ceil(N / 4); // fallback
+  }
+
+  const base = Math.floor(N / m);
+  const rem = N % m;
+
+  const groups = [];
+  let idx = 0;
+  for (let i = 0; i < m; i++) {
+    const size = base + (i < rem ? 1 : 0);
+    groups.push(players.slice(idx, idx + size));
+    idx += size;
+  }
+  return groups;
+}
+
 function makeByes(count) {
   return Array.from({ length: count }, (_, i) => ({
     id: `bye_${i}_${uid()}`,
@@ -28,9 +60,12 @@ function makeByes(count) {
 }
 
 function seedInitialRound(players) {
-  const groups = chunk4(players);
+  const groups = distributeIntoGroups(players);
   const matches = groups.map((g) => {
-    const filled = g.length < 4 ? [...g, ...makeByes(4 - g.length)] : g;
+    // Ensure each match has at least 4 slots (pad with BYEs if needed)
+    const desiredSize = Math.max(4, g.length);
+    const filled =
+      g.length < desiredSize ? [...g, ...makeByes(desiredSize - g.length)] : g;
     return {
       id: `m_${uid()}`,
       slots: filled.map((p) => ({
@@ -91,17 +126,22 @@ function buildNextRound(prev, roundIndex) {
   const { advancers, thirds } = nextRoundFrom(prev);
   if (advancers.length === 0) return null;
 
-  const mod = advancers.length % 4;
-  if (mod !== 0) {
-    const need = 4 - mod;
-    const sortedThirds = [...thirds].sort(
-      (a, b) => b.points - a.points || a.p.name.localeCompare(b.p.name)
-    );
-    advancers.push(...sortedThirds.slice(0, need).map((t) => t.p));
-  }
+  // Distribute advancers preferring 4/5 sized matches when possible
+  let groups = distributeIntoGroups(advancers);
 
-  const groups = chunk4(advancers);
-  const isFinal = advancers.length === 4;
+  // If any group has fewer than 4 real players, top-up with best third-placed players
+  let remainingThirds = [...thirds].sort(
+    (a, b) => b.points - a.points || a.p.name.localeCompare(b.p.name)
+  );
+  groups = groups.map((g) => {
+    if (g.length >= 4) return g;
+    const need = 4 - g.length;
+    const take = remainingThirds.splice(0, need).map((t) => t.p);
+    return [...g, ...take];
+  });
+
+  const totalAdv = groups.reduce((s, g) => s + g.length, 0);
+  const isFinal = totalAdv === 4;
   const roundName = isFinal ? "Final Table" : `Round ${roundIndex + 2}`;
   const matches = groups.map((g) => ({
     id: `m_${uid()}`,
@@ -279,13 +319,15 @@ btnLoad.addEventListener("click", async () => {
   }
 });
 
-btnUseSample.addEventListener("click", async () => {
-  const people = await fetchParticipantsFromSample();
-  state.participants = people;
-  state.rounds = [];
-  renderParticipants();
-  renderRounds();
-});
+if (btnUseSample) {
+  btnUseSample.addEventListener("click", async () => {
+    const people = await fetchParticipantsFromSample();
+    state.participants = people;
+    state.rounds = [];
+    renderParticipants();
+    renderRounds();
+  });
+}
 
 btnSeed.addEventListener("click", () => {
   if (!state.participants.length) return;
@@ -305,43 +347,47 @@ btnReset.addEventListener("click", () => {
   renderRounds();
 });
 
-btnExport.addEventListener("click", () => {
-  const blob = new Blob([JSON.stringify(state, null, 2)], {
-    type: "application/json",
+if (btnExport) {
+  btnExport.addEventListener("click", () => {
+    const blob = new Blob([JSON.stringify(state, null, 2)], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `tournament-state-${Date.now()}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
   });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `tournament-state-${Date.now()}.json`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-});
+}
 
-fileImport.addEventListener("change", (ev) => {
-  const file = ev.target.files?.[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = () => {
-    try {
-      const obj = JSON.parse(String(reader.result));
-      if (
-        !obj ||
-        !Array.isArray(obj.participants) ||
-        !Array.isArray(obj.rounds)
-      )
-        throw new Error("Bad file");
-      state.participants = obj.participants;
-      state.rounds = obj.rounds;
-      renderParticipants();
-      renderRounds();
-    } catch (e) {
-      alert("Invalid state file.");
-    }
-  };
-  reader.readAsText(file);
-});
+if (fileImport) {
+  fileImport.addEventListener("change", (ev) => {
+    const file = ev.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const obj = JSON.parse(String(reader.result));
+        if (
+          !obj ||
+          !Array.isArray(obj.participants) ||
+          !Array.isArray(obj.rounds)
+        )
+          throw new Error("Bad file");
+        state.participants = obj.participants;
+        state.rounds = obj.rounds;
+        renderParticipants();
+        renderRounds();
+      } catch (e) {
+        alert("Invalid state file.");
+      }
+    };
+    reader.readAsText(file);
+  });
+}
 
 // Initialize
 renderParticipants();
