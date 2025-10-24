@@ -97,7 +97,8 @@ section {
 .rounds-grid {
   display: grid;
   gap: 16px;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  /* Stack rounds vertically (single column) */
+  grid-template-columns: 1fr;
 }
 .round {
   background: var(--panel);
