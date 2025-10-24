@@ -126,6 +126,39 @@ function buildNextRound(prev, roundIndex) {
   const { advancers, thirds } = nextRoundFrom(prev);
   if (advancers.length === 0) return null;
 
+  // Special case: Semifinal format (3 matches of 3 players)
+  // If previous round has exactly 3 matches and each match has 3 real players,
+  // advance the 1st from each match plus the best 2nd (by points) -> total 4.
+  const isSemifinalFormat = prev.matches.length === 3 && prev.matches.every((m) => {
+    const realPlayers = m.slots.filter((s) => s.participant && s.participant.name !== 'BYE');
+    return realPlayers.length === 3;
+  });
+
+  if (isSemifinalFormat) {
+    // Ensure placements are computed for all matches
+    const cms = prev.matches.map((m) => computePlacements(m));
+    if (!cms.every((cm) => cm.isComplete && cm.placements && cm.placements.length >= 2)) return null;
+
+    const winners = cms.map((cm) => cm.placements[0]).filter(Boolean);
+    const seconds = cms.map((cm, idx) => {
+      const second = cm.placements[1];
+      const pts = prev.matches[idx].slots.find((s) => s.participant?.id === second?.id)?.points ?? 0;
+      return { p: second, points: pts };
+    }).filter((x) => x.p);
+
+    // choose best second (points desc, then name)
+    seconds.sort((a, b) => b.points - a.points || a.p.name.localeCompare(b.p.name));
+    const bestSecond = seconds[0]?.p;
+    const adv = [...winners];
+    if (bestSecond) adv.push(bestSecond);
+
+    const groups = chunk4(adv);
+    const isFinal = adv.length === 4;
+    const roundName = isFinal ? 'Final Table' : `Round ${roundIndex + 2}`;
+    const matches = groups.map((g) => ({ id: `m_${uid()}`, slots: g.map((p) => ({ participant: p })), isComplete: false }));
+    return { id: `r_${uid()}`, name: roundName, matches, computed: false };
+  }
+
   // Distribute advancers preferring 4/5 sized matches when possible
   let groups = distributeIntoGroups(advancers);
 
@@ -434,7 +467,11 @@ if (fileImport) {
     reader.onload = () => {
       try {
         const obj = JSON.parse(String(reader.result));
-        if (!obj || !Array.isArray(obj.participants) || !Array.isArray(obj.rounds))
+        if (
+          !obj ||
+          !Array.isArray(obj.participants) ||
+          !Array.isArray(obj.rounds)
+        )
           throw new Error("Bad file");
         state.participants = obj.participants;
         state.rounds = obj.rounds;
@@ -451,54 +488,59 @@ if (fileImport) {
 /** Render tournament history inside the popup (replaces card content) */
 function renderHistoryInPopup(overlay, card) {
   // Clear card
-  card.innerHTML = '';
-  const title = document.createElement('h2');
-  title.textContent = 'Tournament history';
+  card.innerHTML = "";
+  const title = document.createElement("h2");
+  title.textContent = "Tournament history";
   card.appendChild(title);
 
-  const hist = document.createElement('div');
-  hist.className = 'history';
+  const hist = document.createElement("div");
+  hist.className = "history";
 
   if (!state.rounds.length) {
-    const p = document.createElement('p');
-    p.textContent = 'No rounds yet.';
+    const p = document.createElement("p");
+    p.textContent = "No rounds yet.";
     hist.appendChild(p);
   } else {
     state.rounds.forEach((round, rIdx) => {
-      const rdiv = document.createElement('div');
-      rdiv.className = 'round-entry';
-      const rh = document.createElement('strong');
+      const rdiv = document.createElement("div");
+      rdiv.className = "round-entry";
+      const rh = document.createElement("strong");
       rh.textContent = `${round.name} (${round.matches.length} match(es))`;
       rdiv.appendChild(rh);
 
       round.matches.forEach((m, mIdx) => {
-        const mdiv = document.createElement('div');
-        mdiv.className = 'match-entry';
-        const mh = document.createElement('div');
+        const mdiv = document.createElement("div");
+        mdiv.className = "match-entry";
+        const mh = document.createElement("div");
         mh.textContent = `Match ${mIdx + 1}`;
         mdiv.appendChild(mh);
 
         // compute placements to show points
         const cm = computePlacements(m);
-        const list = document.createElement('div');
-        cm.placements = cm.placements || m.slots.map((s) => s.participant).filter(Boolean);
+        const list = document.createElement("div");
+        cm.placements =
+          cm.placements || m.slots.map((s) => s.participant).filter(Boolean);
         // show participants in order of placement if available, otherwise show slots
-        const players = cm.placements.length ? cm.placements : m.slots.map((s) => s.participant).filter(Boolean);
+        const players = cm.placements.length
+          ? cm.placements
+          : m.slots.map((s) => s.participant).filter(Boolean);
         players.forEach((p) => {
-          const pl = document.createElement('div');
-          pl.className = 'player-line';
-          const img = document.createElement('img');
-          img.src = p?.flagUrl || '';
-          img.alt = '';
+          const pl = document.createElement("div");
+          pl.className = "player-line";
+          const img = document.createElement("img");
+          img.src = p?.flagUrl || "";
+          img.alt = "";
           pl.appendChild(img);
-          const name = document.createElement('div');
-          name.className = 'player-name';
-          name.textContent = p?.name || '';
+          const name = document.createElement("div");
+          name.className = "player-name";
+          name.textContent = p?.name || "";
           pl.appendChild(name);
-          const points = m.slots.find((s) => s.participant?.id === p?.id)?.points;
-          const pts = document.createElement('div');
-          pts.className = 'player-points';
-          pts.textContent = typeof points === 'number' ? String(points) : '-';
+          const points = m.slots.find(
+            (s) => s.participant?.id === p?.id
+          )?.points;
+          const pts = document.createElement("div");
+          pts.className = "player-points";
+          pts.textContent = typeof points === "number" ? String(points) : "-";
           pl.appendChild(pts);
           list.appendChild(pl);
         });
@@ -513,13 +555,13 @@ function renderHistoryInPopup(overlay, card) {
 
   card.appendChild(hist);
 
-  const back = document.createElement('button');
-  back.textContent = 'Back';
-  back.addEventListener('click', () => {
+  const back = document.createElement("button");
+  back.textContent = "Back";
+  back.addEventListener("click", () => {
     overlay.remove();
     // Re-open winner popup by finding winner from last final round if any
     const last = state.rounds[state.rounds.length - 1];
-    if (last && last.name === 'Final Table') {
+    if (last && last.name === "Final Table") {
       const fm = last.matches[0];
       if (fm) {
         const cm = computePlacements(fm);
