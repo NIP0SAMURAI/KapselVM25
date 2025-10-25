@@ -646,15 +646,16 @@ function buildNextRound(prev, roundIndex) {
                 cmB.placements[1],
                 cmC.placements[2],
               ];
+              // Desired display order: M1 = A1 B2 C3, M2 = B1 C2 A3, M3 = C1 A2 B3
               const m2 = [
-                cmA.placements[2],
                 cmB.placements[0],
                 cmC.placements[1],
+                cmA.placements[2],
               ];
               const m3 = [
+                cmC.placements[0],
                 cmA.placements[1],
                 cmB.placements[2],
-                cmC.placements[0],
               ];
               // Ensure none are BYE and all entries exist
               if (
