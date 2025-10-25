@@ -181,6 +181,15 @@ function computePlacements(match) {
   return { ...match, placements, isComplete: true };
 }
 
+/** Return the points recorded for a participant id in a specific match (or 0).
+ * This centralizes the lookup to avoid mismatches between placements and slot data.
+ */
+function getPointsInMatch(match, participantId) {
+  if (!match || !participantId) return 0;
+  const slot = match.slots.find((s) => s.participant?.id === participantId);
+  return slot && typeof slot.points === "number" ? slot.points : 0;
+}
+
 function nextRoundFrom(current) {
   const advancers = [];
   const thirds = []; // { p, points }
@@ -191,8 +200,7 @@ function nextRoundFrom(current) {
     if (first && first.name !== "BYE") advancers.push(first);
     if (second && second.name !== "BYE") advancers.push(second);
     if (third && third.name !== "BYE") {
-      const pts =
-        m.slots.find((s) => s.participant?.id === third.id)?.points ?? 0;
+      const pts = getPointsInMatch(m, third.id);
       thirds.push({ p: third, points: pts });
     }
   });
@@ -241,9 +249,7 @@ function buildNextRound(prev, roundIndex) {
     const seconds = cms
       .map((cm, idx) => {
         const second = cm.placements[1];
-        const pts =
-          prev.matches[idx].slots.find((s) => s.participant?.id === second?.id)
-            ?.points ?? 0;
+        const pts = getPointsInMatch(prev.matches[idx], second?.id);
         return { p: second, points: pts };
       })
       .filter((x) => x.p)
@@ -282,64 +288,267 @@ function buildNextRound(prev, roundIndex) {
     return { id: `r_${uid()}`, name: "Final Table", matches, computed: false };
   }
 
-  // Special rule for Round 1: if Round 1 has 6 matches, advance the
-  // top-2 from each match plus the best overall 3 players (by points) to
-  // produce 15 advancers for the next round. This keeps the rest of the
-  // tournament logic unchanged.
+  // (Removed older Round 1 special-case that selected 15 advancers by
+  // global top-3 thirds. New logic below enforces per-pair 2/2/1 composition
+  // for Round 1 and will produce 3 matches of 5 players when possible.)
+
+  // Special Round 1 (6 matches): take top-2 from each match + best 3 thirds
+  // globally, then arrange into three next matches with composition
+  // 2 firsts, 2 seconds, 1 third while avoiding placing players from the
+  // same previous match together when possible.
   if (prev.name === "Round 1" && prev.matches.length === 6) {
     const cms = prev.matches.map((m) => computePlacements(m));
-    // require placements for all matches
     if (
-      cms.every((cm) => cm.isComplete && cm.placements && cm.placements.length)
+      cms.every(
+        (cm) => cm.isComplete && cm.placements && cm.placements.length >= 2
+      )
     ) {
-      const selected = [];
-      const selectedIds = new Set();
-      // take best 2 from each match (ignore BYEs)
-      cms.forEach((cm, idx) => {
-        const first = cm.placements[0];
-        const second = cm.placements[1];
-        if (first && first.name !== "BYE" && !selectedIds.has(first.id)) {
-          selected.push(first);
-          selectedIds.add(first.id);
-        }
-        if (second && second.name !== "BYE" && !selectedIds.has(second.id)) {
-          selected.push(second);
-          selectedIds.add(second.id);
-        }
+      // collect firsts and seconds
+      const firsts = cms
+        .map((cm, idx) => ({ p: cm.placements[0], matchIdx: idx }))
+        .filter((x) => x.p && x.p.name !== "BYE");
+      const seconds = cms
+        .map((cm, idx) => ({ p: cm.placements[1], matchIdx: idx }))
+        .filter((x) => x.p && x.p.name !== "BYE");
+      // collect third-placed players (one per match)
+      const thirdsAll = cms
+        .map((cm, idx) => ({ p: cm.placements[2], matchIdx: idx }))
+        .filter((x) => x.p && x.p.name !== "BYE");
+      // sort thirds by points desc, name tiebreak
+      thirdsAll.forEach((t) => {
+        t.points = getPointsInMatch(prev.matches[t.matchIdx], t.p.id);
+        // also capture the first/second points from the source match to use
+        // as tie-breakers when multiple thirds have equal points
+        const cm = cms[t.matchIdx];
+        t.secondPoints =
+          cm && cm.placements[1]
+            ? getPointsInMatch(prev.matches[t.matchIdx], cm.placements[1].id)
+            : 0;
+        t.firstPoints =
+          cm && cm.placements[0]
+            ? getPointsInMatch(prev.matches[t.matchIdx], cm.placements[0].id)
+            : 0;
       });
+      // sort by: third points desc, secondPoints desc, firstPoints desc, name asc, matchIdx asc
+      thirdsAll.sort((a, b) => {
+        if (b.points !== a.points) return b.points - a.points;
+        if ((b.secondPoints || 0) !== (a.secondPoints || 0))
+          return (b.secondPoints || 0) - (a.secondPoints || 0);
+        if ((b.firstPoints || 0) !== (a.firstPoints || 0))
+          return (b.firstPoints || 0) - (a.firstPoints || 0);
+        const nameCmp = a.p.name.localeCompare(b.p.name);
+        if (nameCmp !== 0) return nameCmp;
+        return a.matchIdx - b.matchIdx;
+      });
+      const thirdsSelected = thirdsAll.slice(0, 3);
+      try {
+        console.log(
+          "[buildNextRound] Round1 top-3 thirds:",
+          thirdsAll.map((t) => ({
+            name: t.p.name,
+            points: t.points,
+            matchIdx: t.matchIdx,
+          })),
+          "selected:",
+          thirdsSelected.map((t) => t.p.name)
+        );
+      } catch (e) {}
 
-      // collect only third-placed players (one per match) and pick the best 3
-      // NOTE: We intentionally consider only the players who finished 3rd in
-      // each match — 4th-placed players (or lower) are NOT eligible for these
-      // three extra advancer slots.
-      const thirdsSorted = [...thirds].sort(
-        (a, b) => b.points - a.points || a.p.name.localeCompare(b.p.name)
-      );
-      for (let i = 0; i < 3 && i < thirdsSorted.length; i++) {
-        const p = thirdsSorted[i].p;
-        if (!selectedIds.has(p.id)) {
-          selected.push(p);
-          selectedIds.add(p.id);
+      // Build 3 groups and attempt to assign exactly 2 firsts, 2 seconds and 1 third
+      // per group using a small exhaustive search to guarantee the composition.
+      // This search is limited (<= 540 checks) and deterministic.
+      if (
+        firsts.length === 6 &&
+        seconds.length === 6 &&
+        thirdsSelected.length === 3
+      ) {
+        // pair firsts into three groups: (0,1),(2,3),(4,5)
+        const firstPairs = [
+          [firsts[0], firsts[1]],
+          [firsts[2], firsts[3]],
+          [firsts[4], firsts[5]],
+        ];
+        const secIdx = [0, 1, 2, 3, 4, 5];
+        let solution = null;
+        // choose 2 indices for group0
+        for (let i = 0; i < 5 && !solution; i++) {
+          for (let j = i + 1; j < 6 && !solution; j++) {
+            const rem1 = secIdx.filter((idx) => idx !== i && idx !== j);
+            // choose 2 for group1 from rem1
+            for (let a = 0; a < rem1.length - 1 && !solution; a++) {
+              for (let b = a + 1; b < rem1.length && !solution; b++) {
+                const idxG0 = [i, j];
+                const idxG1 = [rem1[a], rem1[b]];
+                const idxG2 = rem1.filter(
+                  (x) => !idxG1.includes(x) && x !== i && x !== j
+                );
+                // build candidate groups with firsts + seconds
+                const groupsCand = [[], [], []];
+                const meta = [new Set(), new Set(), new Set()];
+                for (let gi = 0; gi < 3; gi++) {
+                  groupsCand[gi].push(firstPairs[gi][0].p);
+                  groupsCand[gi].push(firstPairs[gi][1].p);
+                  meta[gi].add(firstPairs[gi][0].matchIdx);
+                  meta[gi].add(firstPairs[gi][1].matchIdx);
+                }
+                const assignIdxs = [idxG0, idxG1, idxG2];
+                let bad = false;
+                for (let gi = 0; gi < 3 && !bad; gi++) {
+                  for (const sIdx of assignIdxs[gi]) {
+                    const sObj = seconds[sIdx];
+                    // avoid two players from same previous match in same group
+                    if (meta[gi].has(sObj.matchIdx)) {
+                      bad = true;
+                      break;
+                    }
+                    groupsCand[gi].push(sObj.p);
+                    meta[gi].add(sObj.matchIdx);
+                  }
+                }
+                if (bad) continue;
+                // now try all permutations of thirdsSelected (3! = 6)
+                const perms = [
+                  [0, 1, 2],
+                  [0, 2, 1],
+                  [1, 0, 2],
+                  [1, 2, 0],
+                  [2, 0, 1],
+                  [2, 1, 0],
+                ];
+                for (const perm of perms) {
+                  const groupsFinal = groupsCand.map((g) => g.slice());
+                  const metaFinal = meta.map((s) => new Set(s));
+                  let ok = true;
+                  for (let gi = 0; gi < 3; gi++) {
+                    const t = thirdsSelected[perm[gi]];
+                    if (metaFinal[gi].has(t.matchIdx)) {
+                      ok = false;
+                      break;
+                    }
+                    groupsFinal[gi].push(t.p);
+                    metaFinal[gi].add(t.matchIdx);
+                  }
+                  if (!ok) continue;
+                  if (groupsFinal.every((g) => g.length === 5)) {
+                    solution = groupsFinal;
+                    break;
+                  }
+                }
+              }
+            }
+          }
         }
+        if (solution) {
+          const matches = solution.map((g) => ({
+            id: `m_${uid()}`,
+            slots: g.map((p) => ({ participant: p })),
+            isComplete: false,
+          }));
+          return {
+            id: `r_${uid()}`,
+            name: `Round ${roundIndex + 2}`,
+            matches,
+            computed: false,
+          };
+        }
+        // if no exact assignment found, fall through to the per-pair fallback below
+      }
+    }
+  }
+
+  // New rule: If the previous round is Round 1, prefer to form Round 2
+  // matches so that each next-match contains 2 first-places, 2 second-places
+  // and 1 third-place drawn from a pair of previous matches. We pair
+  // adjacent previous matches (0&1 -> next 0, 2&3 -> next 1, ...). This
+  // keeps advancement fair between neighbouring groups and ensures each
+  // next-match follows the 2/2/1 composition when possible. If we cannot
+  // build all matches with full 5 players this way, we fall back to the
+  // default advancer distribution.
+  if (prev.name === "Round 1") {
+    const cms = prev.matches.map((m) => computePlacements(m));
+    // require placements for matches we will use
+    if (
+      cms.every(
+        (cm) => cm.isComplete && cm.placements && cm.placements.length >= 2
+      )
+    ) {
+      const nextMatches = [];
+      const usedIds = new Set();
+      for (let i = 0; i < prev.matches.length; i += 2) {
+        const a = cms[i];
+        const b = cms[i + 1];
+        // collect firsts and seconds from both matches
+        const firsts = [];
+        const seconds = [];
+        const thirds = [];
+        if (a) {
+          if (a.placements[0] && a.placements[0].name !== "BYE")
+            firsts.push(a.placements[0]);
+          if (a.placements[1] && a.placements[1].name !== "BYE")
+            seconds.push(a.placements[1]);
+          if (a.placements[2] && a.placements[2].name !== "BYE") {
+            const pts =
+              prev.matches[i].slots.find(
+                (s) => s.participant?.id === a.placements[2]?.id
+              )?.points ?? 0;
+            thirds.push({ p: a.placements[2], points: pts });
+          }
+        }
+        if (b) {
+          if (b.placements[0] && b.placements[0].name !== "BYE")
+            firsts.push(b.placements[0]);
+          if (b.placements[1] && b.placements[1].name !== "BYE")
+            seconds.push(b.placements[1]);
+          if (b.placements[2] && b.placements[2].name !== "BYE") {
+            const pts =
+              prev.matches[i + 1].slots.find(
+                (s) => s.participant?.id === b.placements[2]?.id
+              )?.points ?? 0;
+            thirds.push({ p: b.placements[2], points: pts });
+          }
+        }
+
+        // We expect 2 firsts and 2 seconds to form a full 5-player match
+        if (firsts.length >= 2 && seconds.length >= 2 && thirds.length >= 1) {
+          // pick the best third by points among the pair
+          thirds.sort(
+            (x, y) => y.points - x.points || x.p.name.localeCompare(y.p.name)
+          );
+          const selected = [
+            firsts[0],
+            firsts[1],
+            seconds[0],
+            seconds[1],
+            thirds[0].p,
+          ];
+          // ensure uniqueness
+          const unique = Array.from(
+            new Map(selected.map((p) => [p.id, p])).values()
+          );
+          if (unique.length === 5) {
+            unique.forEach((p) => usedIds.add(p.id));
+            nextMatches.push({
+              id: `m_${uid()}`,
+              slots: unique.map((p) => ({ participant: p })),
+              isComplete: false,
+            });
+            continue;
+          }
+        }
+        // If we couldn't form a full 5-player match for this pair, bail out
+        // and fall back to the general distribution below.
+        nextMatches.length = 0;
+        break;
       }
 
-      // ensure we have 15 (if not, fall back to default advancer logic)
-      if (selected.length === 15) {
-        // build next round from these 15 advancers
-        const groups = distributeIntoGroups(selected);
-        const matches = groups.map((g) => ({
-          id: `m_${uid()}`,
-          slots: g.map((p) => ({ participant: p })),
-          isComplete: false,
-        }));
+      if (nextMatches.length > 0) {
         return {
           id: `r_${uid()}`,
           name: `Round ${roundIndex + 2}`,
-          matches,
+          matches: nextMatches,
           computed: false,
         };
       }
-      // otherwise fall through to normal behavior below
     }
   }
 
@@ -411,21 +620,80 @@ function buildNextRound(prev, roundIndex) {
       // Only create a Semifinal when we can select exactly 9 players.
       // Using >= allowed premature creation; require === 9 to match rule.
       if (pool.length === 9) {
-        const selected = pool.slice(0, 9);
-        const groups = [];
-        for (let i = 0; i < 3; i++)
-          groups.push(selected.slice(i * 3, i * 3 + 3));
-        const matches = groups.map((g) => ({
-          id: `m_${uid()}`,
-          slots: g.map((p) => ({ participant: p })),
-          isComplete: false,
-        }));
-        return {
-          id: `r_${uid()}`,
-          name: "Semifinal",
-          matches,
-          computed: false,
-        };
+        // Prefer forming the Semifinal by taking 1st/2nd/3rd from each of
+        // the three previous matches when possible. This guarantees each
+        // semifinal match contains a 1st, 2nd and 3rd from the round before.
+        if (pool.length === 9) {
+          // Prefer forming the Semifinal by creating cross-group matches so
+          // players from the same previous match don't meet again. Given three
+          // previous matches A, B, C with placements [A1,A2,A3], [B1,B2,B3],
+          // [C1,C2,C3], produce semifinal matches:
+          //  - M1 = [A1, B2, C3]
+          //  - M2 = [A3, B1, C2]
+          //  - M3 = [A2, B3, C1]
+          if (prev.matches.length === 3) {
+            const [cmA, cmB, cmC] = cms;
+            if (
+              cmA.placements &&
+              cmB.placements &&
+              cmC.placements &&
+              cmA.placements.length >= 3 &&
+              cmB.placements.length >= 3 &&
+              cmC.placements.length >= 3
+            ) {
+              const m1 = [
+                cmA.placements[0],
+                cmB.placements[1],
+                cmC.placements[2],
+              ];
+              const m2 = [
+                cmA.placements[2],
+                cmB.placements[0],
+                cmC.placements[1],
+              ];
+              const m3 = [
+                cmA.placements[1],
+                cmB.placements[2],
+                cmC.placements[0],
+              ];
+              // Ensure none are BYE and all entries exist
+              if (
+                m1.every((p) => p && p.name !== "BYE") &&
+                m2.every((p) => p && p.name !== "BYE") &&
+                m3.every((p) => p && p.name !== "BYE")
+              ) {
+                const matches = [m1, m2, m3].map((g) => ({
+                  id: `m_${uid()}`,
+                  slots: g.map((p) => ({ participant: p })),
+                  isComplete: false,
+                }));
+                return {
+                  id: `r_${uid()}`,
+                  name: "Semifinal",
+                  matches,
+                  computed: false,
+                };
+              }
+            }
+          }
+
+          // Fallback: take the first 9 players from the pool and split into 3 groups
+          const selected = pool.slice(0, 9);
+          const groups = [];
+          for (let i = 0; i < 3; i++)
+            groups.push(selected.slice(i * 3, i * 3 + 3));
+          const matches = groups.map((g) => ({
+            id: `m_${uid()}`,
+            slots: g.map((p) => ({ participant: p })),
+            isComplete: false,
+          }));
+          return {
+            id: `r_${uid()}`,
+            name: "Semifinal",
+            matches,
+            computed: false,
+          };
+        }
       }
     }
   }
