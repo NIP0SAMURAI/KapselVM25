@@ -269,6 +269,77 @@ function buildNextRound(prev, roundIndex) {
     return { id: `r_${uid()}`, name: "Final Table", matches, computed: false };
   }
 
+  // Special rule for Round 1: if Round 1 has 6 matches, advance the
+  // top-2 from each match plus the best overall 3 players (by points) to
+  // produce 15 advancers for the next round. This keeps the rest of the
+  // tournament logic unchanged.
+  if (prev.name === "Round 1" && prev.matches.length === 6) {
+    const cms = prev.matches.map((m) => computePlacements(m));
+    // require placements for all matches
+    if (
+      cms.every((cm) => cm.isComplete && cm.placements && cm.placements.length)
+    ) {
+      const selected = [];
+      const selectedIds = new Set();
+      // take best 2 from each match (ignore BYEs)
+      cms.forEach((cm, idx) => {
+        const first = cm.placements[0];
+        const second = cm.placements[1];
+        if (first && first.name !== "BYE" && !selectedIds.has(first.id)) {
+          selected.push(first);
+          selectedIds.add(first.id);
+        }
+        if (second && second.name !== "BYE" && !selectedIds.has(second.id)) {
+          selected.push(second);
+          selectedIds.add(second.id);
+        }
+      });
+
+      // collect all remaining real players with their points
+      const remaining = [];
+      prev.matches.forEach((m) => {
+        m.slots.forEach((s) => {
+          const p = s.participant;
+          if (!p || p.name === "BYE") return;
+          if (selectedIds.has(p.id)) return;
+          remaining.push({
+            p,
+            points: typeof s.points === "number" ? s.points : 0,
+          });
+        });
+      });
+      remaining.sort(
+        (a, b) => b.points - a.points || a.p.name.localeCompare(b.p.name)
+      );
+      // pick top 3 overall
+      for (let i = 0; i < 3 && i < remaining.length; i++) {
+        const p = remaining[i].p;
+        if (!selectedIds.has(p.id)) {
+          selected.push(p);
+          selectedIds.add(p.id);
+        }
+      }
+
+      // ensure we have 15 (if not, fall back to default advancer logic)
+      if (selected.length === 15) {
+        // build next round from these 15 advancers
+        const groups = distributeIntoGroups(selected);
+        const matches = groups.map((g) => ({
+          id: `m_${uid()}`,
+          slots: g.map((p) => ({ participant: p })),
+          isComplete: false,
+        }));
+        return {
+          id: `r_${uid()}`,
+          name: `Round ${roundIndex + 2}`,
+          matches,
+          computed: false,
+        };
+      }
+      // otherwise fall through to normal behavior below
+    }
+  }
+
   // Attempt to form a Semifinal of 9 players (3 matches × 3 players).
   // Build a candidate pool: winners first, then seconds (by points), then
   // third-placed players (by points). If we can select 9 unique players,
