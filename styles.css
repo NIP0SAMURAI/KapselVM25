@@ -172,6 +172,36 @@ section {
   padding: 8px;
   margin-bottom: 12px;
 }
+
+.match-label {
+  font-weight: 700;
+  color: var(--brand);
+  background: rgba(79,121,255,0.06);
+  display: inline-block;
+  padding: 4px 8px;
+  border-radius: 8px;
+  margin-bottom: 8px;
+}
+
+/* Grid for matches inside a round: three columns on wide screens, falling
+   back to one column on narrow screens for better mobile layout. */
+.matches-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+@media (max-width: 920px) {
+  .matches-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 600px) {
+  .matches-grid {
+    grid-template-columns: 1fr;
+  }
+}
 .slot {
   display: grid;
   grid-template-columns: 22px 1fr 96px;

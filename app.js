@@ -20,6 +20,19 @@ function chunk4(arr) {
   return out;
 }
 
+/** Convert 0-based index to alphabetical label: 0->A, 25->Z, 26->AA, etc. */
+function indexToLabel(i) {
+  const A = 65; // 'A'
+  let n = i + 1;
+  let s = "";
+  while (n > 0) {
+    const rem = (n - 1) % 26;
+    s = String.fromCharCode(A + rem) + s;
+    n = Math.floor((n - 1) / 26);
+  }
+  return s;
+}
+
 /**
  * Distribute players into groups where each group has at least 4 players.
  * When possible, groups will be sized 4 or 5 so the real participants per
@@ -640,9 +653,18 @@ function renderRounds() {
     meta.textContent = stats;
     roundEl.appendChild(meta);
 
+    // Create a grid container for matches so we can display them in columns
+    const matchesGrid = document.createElement("div");
+    matchesGrid.className = "matches-grid";
+
     round.matches.forEach((m, mIdx) => {
-      const matchEl = document.createElement("div");
-      matchEl.className = "match";
+  const matchEl = document.createElement("div");
+  matchEl.className = "match";
+  // add alphabetical label (Match A, B, C...)
+  const lbl = document.createElement("div");
+  lbl.className = "match-label";
+  lbl.textContent = indexToLabel(mIdx);
+  matchEl.appendChild(lbl);
 
       const updated = () => {
         // Normalize empty -> undefined
@@ -751,9 +773,9 @@ function renderRounds() {
         });
       }
 
-      roundEl.appendChild(matchEl);
+      matchesGrid.appendChild(matchEl);
     });
-
+    roundEl.appendChild(matchesGrid);
     roundsContainer.appendChild(roundEl);
   });
 
@@ -1013,8 +1035,8 @@ function renderHistoryInPopup(overlay, card) {
       round.matches.forEach((m, mIdx) => {
         const mdiv = document.createElement("div");
         mdiv.className = "match-entry";
-        const mh = document.createElement("div");
-        mh.textContent = `Match ${mIdx + 1}`;
+  const mh = document.createElement("div");
+  mh.textContent = `Match ${indexToLabel(mIdx)}`;
         mdiv.appendChild(mh);
 
         // compute placements to show points
