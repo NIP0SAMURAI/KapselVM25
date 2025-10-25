@@ -1,5 +1,4 @@
-# Tournament Tree – Vanilla JS
-
+# Tournament Tree
 A simple, framework‑free tournament generator for 4‑player matches (top‑2 advance, best 3rds fill) with Google Sheets as the source of participants.
 
 ## Requirements
