@@ -658,13 +658,13 @@ function renderRounds() {
     matchesGrid.className = "matches-grid";
 
     round.matches.forEach((m, mIdx) => {
-  const matchEl = document.createElement("div");
-  matchEl.className = "match";
-  // add alphabetical label (Match A, B, C...)
-  const lbl = document.createElement("div");
-  lbl.className = "match-label";
-  lbl.textContent = indexToLabel(mIdx);
-  matchEl.appendChild(lbl);
+      const matchEl = document.createElement("div");
+      matchEl.className = "match";
+      // add alphabetical label (Match A, B, C...)
+      const lbl = document.createElement("div");
+      lbl.className = "match-label";
+      lbl.textContent = indexToLabel(mIdx);
+      matchEl.appendChild(lbl);
 
       const updated = () => {
         // Normalize empty -> undefined
@@ -1035,8 +1035,8 @@ function renderHistoryInPopup(overlay, card) {
       round.matches.forEach((m, mIdx) => {
         const mdiv = document.createElement("div");
         mdiv.className = "match-entry";
-  const mh = document.createElement("div");
-  mh.textContent = `Match ${indexToLabel(mIdx)}`;
+        const mh = document.createElement("div");
+        mh.textContent = `Match ${indexToLabel(mIdx)}`;
         mdiv.appendChild(mh);
 
         // compute placements to show points

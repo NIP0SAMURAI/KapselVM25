@@ -3,7 +3,7 @@
   --panel: #171a21;
   --text: #e7ecf3;
   --muted: #9aa7b2;
-  --brand: #4f79ff;
+  --brand: #ebedf2;
   --ok: #48c78e;
   --warn: #ffb100;
   --danger: #ff6b6b;
@@ -176,7 +176,7 @@ section {
 .match-label {
   font-weight: 700;
   color: var(--brand);
-  background: rgba(79,121,255,0.06);
+  background: rgba(79, 121, 255, 0.06);
   display: inline-block;
   padding: 4px 8px;
   border-radius: 8px;
@@ -236,6 +236,19 @@ section {
   border: 1px solid var(--border);
   background: #0c0f14;
   color: var(--text);
+}
+
+/* Remove native number input spinner arrows for the points fields to
+   avoid accidental clicks while dragging and improve UX. Works for
+   WebKit (Chrome/Safari) and Firefox. */
+.points::-webkit-outer-spin-button,
+.points::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.points {
+  -moz-appearance: textfield; /* Firefox */
+  appearance: textfield;
 }
 
 .badge {
