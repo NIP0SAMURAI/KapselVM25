@@ -308,25 +308,15 @@ function buildNextRound(prev, roundIndex) {
         }
       });
 
-      // collect all remaining real players with their points
-      const remaining = [];
-      prev.matches.forEach((m) => {
-        m.slots.forEach((s) => {
-          const p = s.participant;
-          if (!p || p.name === "BYE") return;
-          if (selectedIds.has(p.id)) return;
-          remaining.push({
-            p,
-            points: typeof s.points === "number" ? s.points : 0,
-          });
-        });
-      });
-      remaining.sort(
+      // collect only third-placed players (one per match) and pick the best 3
+      // NOTE: We intentionally consider only the players who finished 3rd in
+      // each match — 4th-placed players (or lower) are NOT eligible for these
+      // three extra advancer slots.
+      const thirdsSorted = [...thirds].sort(
         (a, b) => b.points - a.points || a.p.name.localeCompare(b.p.name)
       );
-      // pick top 3 overall
-      for (let i = 0; i < 3 && i < remaining.length; i++) {
-        const p = remaining[i].p;
+      for (let i = 0; i < 3 && i < thirdsSorted.length; i++) {
+        const p = thirdsSorted[i].p;
         if (!selectedIds.has(p.id)) {
           selected.push(p);
           selectedIds.add(p.id);
