@@ -1124,13 +1124,35 @@ function showWinnerPopup(winner) {
   card.appendChild(h);
 
   const desc = document.createElement("p");
-  desc.textContent = "You are the champion — well played!";
+  desc.textContent = "You are the 2026 world champion of kapsel!";
   card.appendChild(desc);
 
   const btn = document.createElement("button");
   btn.textContent = "Close";
   btn.addEventListener("click", () => overlay.remove());
   card.appendChild(btn);
+
+  // Download CSV button: exports all rounds/matches/slots data
+  const btnDownload = document.createElement("button");
+  btnDownload.textContent = "Download Results";
+  btnDownload.addEventListener("click", () => {
+    try {
+      const csv = buildRoundsCsv();
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `tournament-rounds-${Date.now()}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("Failed to build CSV", err);
+      alert("Failed to generate CSV. See console for details.");
+    }
+  });
+  card.appendChild(btnDownload);
 
   overlay.appendChild(card);
   document.body.appendChild(overlay);
@@ -1266,6 +1288,65 @@ if (fileImport) {
     };
     reader.readAsText(file);
   });
+}
+
+/** Build a CSV string representing all rounds, matches and slot/player data.
+ * Columns: Round, Match, SlotIndex, Placement, ParticipantId, ParticipantName,
+ * Section, Points, FlagUrl
+ */
+function buildRoundsCsv() {
+  function escapeCsvField(v) {
+    if (v === null || v === undefined) return "";
+    return '"' + String(v).replace(/"/g, '""') + '"';
+  }
+
+  const rows = [];
+  rows.push(
+    [
+      "Round",
+      "Match",
+      "SlotIndex",
+      "Placement",
+      "ParticipantName",
+      "Section",
+      "Points",
+      "FlagUrl",
+    ].join(",")
+  );
+
+  state.rounds.forEach((round) => {
+    round.matches.forEach((m, mIdx) => {
+      const cm = computePlacements(m);
+      // Determine ordered placements if available, else fallback to slot order
+      const placements =
+        cm && cm.placements && cm.placements.length
+          ? cm.placements
+          : m.slots.map((s) => s.participant).filter(Boolean);
+
+      // For each slot with a participant, produce one CSV row
+      m.slots.forEach((s, slotIdx) => {
+        const p = s.participant;
+        if (!p) return; // skip empty slots
+        const placementIndex =
+          placements && placements.findIndex((pp) => pp && pp.id === p.id);
+        const placement = placementIndex >= 0 ? placementIndex + 1 : "";
+        const points = typeof s.points === "number" ? s.points : "";
+        const cols = [
+          round.name,
+          indexToLabel(mIdx),
+          slotIdx,
+          placement,
+          p.name || "",
+          p.section || "",
+          points,
+          p.flagUrl || "",
+        ];
+        rows.push(cols.map(escapeCsvField).join(","));
+      });
+    });
+  });
+
+  return rows.join("\r\n");
 }
 
 /** Render tournament history inside the popup (replaces card content) */
